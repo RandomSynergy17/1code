@@ -141,6 +141,51 @@ export function NewChatForm({
   const { data: projectsList, isLoading: isLoadingProjects } =
     trpc.projects.list.useQuery()
 
+  // Check for launch directory from CLI (e.g., `1code /path/to/project`)
+  const { data: launchDirectory } = trpc.projects.getLaunchDirectory.useQuery()
+
+  // Mutation to create project from path
+  const createProjectMutation = trpc.projects.create.useMutation({
+    onSuccess: (project) => {
+      if (project) {
+        // Update projects list cache
+        utils.projects.list.setData(undefined, (oldData) => {
+          if (!oldData) return [project]
+          const exists = oldData.some((p) => p.id === project.id)
+          if (exists) {
+            return oldData.map((p) =>
+              p.id === project.id ? { ...p, updatedAt: project.updatedAt } : p,
+            )
+          }
+          return [project, ...oldData]
+        })
+
+        // Select the project
+        setSelectedProject({
+          id: project.id,
+          name: project.name,
+          path: project.path,
+          gitRemoteUrl: project.gitRemoteUrl,
+          gitProvider: project.gitProvider as
+            | "github"
+            | "gitlab"
+            | "bitbucket"
+            | null,
+          gitOwner: project.gitOwner,
+          gitRepo: project.gitRepo,
+        })
+      }
+    },
+  })
+
+  // Handle launch directory from CLI
+  useEffect(() => {
+    if (launchDirectory) {
+      console.log("[CLI] Processing launch directory:", launchDirectory)
+      createProjectMutation.mutate({ path: launchDirectory })
+    }
+  }, [launchDirectory])
+
   // Validate selected project exists in DB
   // While loading, trust the stored value to prevent flicker
   const validatedProject = useMemo(() => {
